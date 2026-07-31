@@ -1,3 +1,4 @@
+// lib/types.ts
 export type NasStatus = 'online' | 'offline' | 'degraded';
 export type UserStatus = 'active' | 'disabled' | 'expired' | 'used' | 'unused';
 export type SessionStatus = 'connected' | 'disconnected';

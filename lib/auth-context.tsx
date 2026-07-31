@@ -7,8 +7,6 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import type { Session } from '@supabase/supabase-js';
-import { supabase } from '@/lib/supabase';
 import type {
   AuthSession,
   Tenant,
@@ -24,6 +22,8 @@ const defaultAuth: AuthSession = {
   loading: true,
 };
 
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'https://yourwisp.com';
+
 const AuthContext = createContext<AuthSession>(defaultAuth);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -32,53 +32,89 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let active = true;
 
-    async function buildSession(session: Session | null) {
-      if (!active) return;
-      if (!session?.user) {
-        setAuth({ user: null, profile: null, tenant: null, tenantUser: null, loading: false });
+    async function loadNodeSession() {
+      const token = localStorage.getItem('tenant_token');
+      const tenantId = localStorage.getItem('current_tenant_id');
+
+      if (!token || !tenantId) {
+        if (active) {
+          setAuth({ user: null, profile: null, tenant: null, tenantUser: null, loading: false });
+        }
         return;
       }
 
-      const userId = session.user.id;
+      try {
+        // Query your Node.js Droplet stack configuration profile endpoints to reconstruct states
+        const response = await fetch(`${API_BASE_URL}/auth/me`, {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'X-Tenant-ID': tenantId,
+            'Content-Type': 'application/json'
+          }
+        });
 
-      const [profileRes, tenantUserRes] = await Promise.all([
-        supabase.from('tenant_profile').select('*').eq('user_id', userId).maybeSingle(),
-        supabase.from('tenant_users').select('*').eq('user_id', userId).maybeSingle(),
-      ]);
+        const result = await response.json();
 
-      if (!active) return;
+        if (!response.ok || !result.success) {
+          // Token expired or deleted remotely - wipe local settings layout parameters safely
+          localStorage.removeItem('tenant_token');
+          localStorage.removeItem('current_tenant_id');
+          if (active) {
+            setAuth({ user: null, profile: null, tenant: null, tenantUser: null, loading: false });
+          }
+          return;
+        }
 
-      let tenant: Tenant | null = null;
-      const tenantUser = (tenantUserRes.data as TenantUser) ?? null;
+        const sessionData = result.data; // Expects compiled profile schema blocks array metrics mapping
 
-      if (tenantUser?.tenant_id) {
-        const { data: tenantData } = await supabase
-          .from('tenants')
-          .select('*, package:tenant_packages(id, name)')
-          .eq('id', tenantUser.tenant_id)
-          .maybeSingle();
-        if (active) tenant = (tenantData as Tenant) ?? null;
+        if (!active) return;
+
+        setAuth({
+          user: { 
+            id: sessionData.user.id, 
+            email: sessionData.user.email 
+          },
+          profile: {
+            user_id: sessionData.user.id,
+            full_name: sessionData.profile.fullName,
+            created_at: sessionData.profile.createdAt
+          } as TenantProfile,
+          tenant: {
+            id: sessionData.tenant.id,
+            company_name: sessionData.tenant.businessName,
+            contact_email: sessionData.tenant.email,
+            contact_phone: sessionData.tenant.phone,
+            country: sessionData.tenant.country,
+            city: sessionData.tenant.city,
+            package_id: sessionData.tenant.packageId
+          } as Tenant,
+          tenantUser: {
+            id: sessionData.tenantUser.id,
+            tenant_id: sessionData.tenant.id,
+            user_id: sessionData.user.id,
+            role: sessionData.tenantUser.role
+          } as TenantUser,
+          loading: false,
+        });
+
+      } catch (error) {
+        console.error('Session sync fallback block failure:', error);
+        if (active) {
+          setAuth({ user: null, profile: null, tenant: null, tenantUser: null, loading: false });
+        }
       }
-
-      if (!active) return;
-      setAuth({
-        user: { id: userId, email: session.user.email ?? '' },
-        profile: (profileRes.data as TenantProfile) ?? null,
-        tenant,
-        tenantUser,
-        loading: false,
-      });
     }
 
-    supabase.auth.getSession().then(({ data }) => buildSession(data.session));
+    loadNodeSession();
 
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
-      (async () => buildSession(session))();
-    });
+    // Setup an interval pool checker or hook listener to mirror real-time adjustments if required
+    const handleStorageChange = () => loadNodeSession();
+    window.addEventListener('storage', handleStorageChange);
 
     return () => {
       active = false;
-      sub.subscription.unsubscribe();
+      window.removeEventListener('storage', handleStorageChange);
     };
   }, []);
 

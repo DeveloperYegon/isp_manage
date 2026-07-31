@@ -5,11 +5,13 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Wifi, Mail, Lock, ArrowRight } from 'lucide-react';
 import { toast } from 'sonner';
-import { supabase } from '@/lib/supabase';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+
+// Read configuration route domains directly from target environment strings
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'https://yourwisp.com';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -23,15 +25,45 @@ export default function LoginPage() {
       toast.error('Enter your email and password');
       return;
     }
+    
     setLoading(true);
-    const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
-    setLoading(false);
-    if (error) {
-      toast.error('Invalid email or password');
-      return;
+
+    try {
+      // Fire authorization payload directly down to your droplet node server pipeline
+      const response = await fetch(`${API_BASE_URL}/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: email.trim().toLowerCase(),
+          password: password,
+        }),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok || !result.success) {
+        throw new Error(result.error || result.message || 'Invalid email or password');
+      }
+
+      // Intercept execution metrics token and linked tenant_id context configurations
+      const { token, tenantId } = result.data;
+
+      // Mount into browser local memory context keys to authorize dashboard component loads
+      localStorage.setItem('tenant_token', token);
+      localStorage.setItem('current_tenant_id', String(tenantId));
+
+      toast.success('Welcome back!');
+      
+      // Clear out client runtime cache layouts and redirect to application suite
+      router.push('/dashboard');
+      router.refresh();
+
+    } catch (error: any) {
+      console.error('Login authorization compilation execution error:', error);
+      toast.error(error.message || 'Authentication block fault. Verify credentials.');
+    } finally {
+      setLoading(false);
     }
-    toast.success('Welcome back!');
-    router.push('/dashboard');
   }
 
   return (
