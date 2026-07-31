@@ -1,11 +1,11 @@
 'use client';
+'use client';
 
-import { useState, Suspense } from 'react';
+import React, { useState, Suspense, type FormEvent } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { Wifi, Mail, Lock, User, Building2, Phone, ArrowRight, MapPin } from 'lucide-react';
 import { toast } from 'sonner';
-import { supabase } from '@/lib/supabase';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -28,6 +28,9 @@ const COUNTRIES = [
   'Kenya', 'Uganda', 'Tanzania', 'Rwanda', 'Nigeria', 'Ghana', 'South Africa', 'Ethiopia', 'Other',
 ];
 
+// Read environment target domain path, falling back gracefully to droplet proxy endpoint
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'https://yourwisp.com';
+
 function SignupForm() {
   const router = useRouter();
   const params = useSearchParams();
@@ -42,8 +45,9 @@ function SignupForm() {
   const [city, setCity] = useState('');
   const [loading, setLoading] = useState(false);
 
-  async function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: FormEvent) {
     e.preventDefault();
+    
     if (!fullName.trim() || !email.trim() || !password || !companyName.trim()) {
       toast.error('Please fill in all required fields');
       return;
@@ -52,66 +56,51 @@ function SignupForm() {
       toast.error('Password must be at least 6 characters');
       return;
     }
+    
     setLoading(true);
 
-    // 1. Create auth account
-    const { data: authData, error: authError } = await supabase.auth.signUp({
-      email: email.trim(),
-      password,
-    });
-    if (authError) {
-      setLoading(false);
-      if (authError.message.includes('already registered')) {
-        toast.error('An account with this email already exists. Please sign in.');
-      } else {
-        toast.error('Could not create your account. Please try again.');
-      }
-      return;
-    }
-    if (!authData.user) {
-      setLoading(false);
-      toast.error('Account creation failed. Please try again.');
-      return;
-    }
-
-    const userId = authData.user.id;
-
-    // 2. Create profile + tenant via RPC
-    // First try to claim the demo tenant (gives instant data)
-    const { data: claimed } = await supabase.rpc('claim_demo_tenant');
-
-    if (!claimed) {
-      // Demo already claimed — create a fresh tenant
-      const { error: tenantError } = await supabase.rpc('create_tenant', {
-        p_company_name: companyName.trim(),
-        p_contact_email: email.trim(),
-        p_contact_phone: phone.trim() || null,
-        p_country: country,
-        p_city: city.trim() || null,
-        p_package_id: selectedPackage || null,
+    try {
+      // Direct unified submission payload matching the Node.js MVC register controller endpoints
+      const response = await fetch(`${API_BASE_URL}/auth/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          businessName: companyName.trim(),
+          email: email.trim().toLowerCase(),
+          password: password,
+          fullName: fullName.trim(),
+          phone: phone.trim() || null,
+          country: country,
+          city: city.trim() || null,
+          packageId: selectedPackage || null
+        })
       });
-      if (tenantError) {
-        setLoading(false);
-        toast.error('Account created but tenant setup failed. Please contact support.');
-        return;
+
+      const result = await response.json();
+
+      if (!response.ok || !result.success) {
+        throw new Error(result.error || result.message || 'Account registration failed');
       }
-    } else {
-      // Claimed demo tenant — update its company name to the user's
-      await supabase
-        .from('tenants')
-        .update({ company_name: companyName.trim(), contact_email: email.trim(), contact_phone: phone.trim() || null })
-        .eq('id', 'd0000000-0000-0000-0000-000000000001');
+
+      // Extract generated JSON Web Token (JWT) payload items securely
+      const { token, tenantId } = result.data;
+
+      // Persist values in the browser memory for local API calls mapping 
+      localStorage.setItem('tenant_token', token);
+      localStorage.setItem('current_tenant_id', String(tenantId));
+
+      toast.success('Account created successfully! Welcome to WispNet.');
+      
+      // Forces page state updates across dashboard layers
+      router.push('/dashboard');
+      router.refresh();
+      
+    } catch (error: any) {
+      console.error('Registration processing framework block failure:', error);
+      toast.error(error.message || 'Could not connect to authentication services.');
+    } finally {
+      setLoading(false);
     }
-
-    // 3. Create profile
-    await supabase.from('tenant_profile').upsert({
-      user_id: userId,
-      full_name: fullName.trim(),
-    });
-
-    setLoading(false);
-    toast.success('Account created! Welcome to WispNet.');
-    router.push('/dashboard');
   }
 
   return (
