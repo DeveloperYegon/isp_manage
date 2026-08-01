@@ -61,7 +61,7 @@ function SignupForm() {
 
     try {
       // Direct unified submission payload matching the Node.js MVC register controller endpoints
-      const response = await fetch(`${API_BASE_URL}/auth/register`, {
+      const response = await fetch(`${API_BASE_URL}:3000/auth/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
