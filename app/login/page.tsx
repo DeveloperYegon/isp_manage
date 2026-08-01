@@ -30,7 +30,7 @@ export default function LoginPage() {
 
     try {
       // Fire authorization payload directly down to your droplet node server pipeline
-      const response = await fetch(`${API_BASE_URL}:2703/auth/login`, {
+      const response = await fetch(`${API_BASE_URL}/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
