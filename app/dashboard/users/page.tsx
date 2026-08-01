@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Plus, Users, Search, MoreHorizontal, Pencil, Trash2, Ticket, UserCircle } from 'lucide-react';
 import { toast } from 'sonner';
-import { supabase } from '@/lib/supabase';
+import { apiFetch } from '@/lib/api';
 import type { RadCheck, RadGroupReply, UserStatus } from '@/lib/types';
 import { PageShell } from '@/components/page-shell';
 import { StatusBadge, statusVariant } from '@/components/status-badge';
@@ -36,14 +36,18 @@ export default function UsersPage() {
 
   async function load() {
     setLoading(true);
-    const [u, p] = await Promise.all([
-      supabase.from('radcheck').select('*, plan:radgroupreply(id,plan_name)').order('created_at', { ascending: false }),
-      supabase.from('radgroupreply').select('*').order('sort_order'),
-    ]);
-    if (u.error) { toast.error('Failed to load users'); setLoading(false); return; }
-    setUsers(u.data as RadCheck[]);
-    setPlans((p.data as RadGroupReply[]) ?? []);
-    setLoading(false);
+    try {
+      const [usersData, plansData] = await Promise.all([
+        apiFetch<RadCheck[]>('/users'),
+        apiFetch<RadGroupReply[]>('/plans'),
+      ]);
+      setUsers(usersData ?? []);
+      setPlans(plansData ?? []);
+    } catch (error) {
+      toast.error('Failed to load users');
+    } finally {
+      setLoading(false);
+    }
   }
 
   useEffect(() => { load(); }, []);
@@ -76,33 +80,56 @@ export default function UsersPage() {
       email: form.email.trim() || null,
       is_voucher: form.is_voucher,
     };
-    let res;
-    if (editing) res = await supabase.from('radcheck').update(payload).eq('id', editing.id);
-    else res = await supabase.from('radcheck').insert(payload);
-    setSaving(false);
-    if (res.error) { toast.error(editing ? 'Failed to update user' : 'Failed to create user'); return; }
-
-    // Sync radusergroup
-    if (form.plan_id !== '__none__') {
-      const plan = plans.find((p) => p.id === form.plan_id);
-      if (plan) {
-        if (editing) {
-          await supabase.from('radusergroup').delete().eq('username', editing.username);
-        }
-        await supabase.from('radusergroup').insert({ username: form.username.trim(), groupname: plan.groupname, priority: 1 });
+    try {
+      if (editing) {
+        await apiFetch(`/users/${editing.id}`, {
+          method: 'PUT',
+          body: payload,
+        });
+      } else {
+        await apiFetch('/users', {
+          method: 'POST',
+          body: payload,
+        });
       }
+
+      if (form.plan_id !== '__none__') {
+        const plan = plans.find((p) => p.id === form.plan_id);
+        if (plan) {
+          await apiFetch('/user-groups', {
+            method: 'POST',
+            body: { username: form.username.trim(), groupname: plan.groupname, priority: 1 },
+          });
+        }
+      }
+
+      toast.success(editing ? 'User updated' : 'User created');
+      setDialogOpen(false);
+      load();
+    } catch (error) {
+      toast.error(editing ? 'Failed to update user' : 'Failed to create user');
+    } finally {
+      setSaving(false);
     }
-    toast.success(editing ? 'User updated' : 'User created');
-    setDialogOpen(false); load();
   }
 
   async function confirmDelete() {
     if (!deleteId) return;
     const user = users.find((u) => u.id === deleteId);
-    if (user) await supabase.from('radusergroup').delete().eq('username', user.username);
-    const { error } = await supabase.from('radcheck').delete().eq('id', deleteId);
-    if (error) { toast.error('Failed to delete user'); return; }
-    toast.success('User deleted'); setDeleteId(null); load();
+    try {
+      if (user) {
+        await apiFetch('/user-groups', {
+          method: 'DELETE',
+          body: { username: user.username },
+        });
+      }
+      await apiFetch(`/users/${deleteId}`, { method: 'DELETE' });
+      toast.success('User deleted');
+      setDeleteId(null);
+      load();
+    } catch (error) {
+      toast.error('Failed to delete user');
+    }
   }
 
   return (

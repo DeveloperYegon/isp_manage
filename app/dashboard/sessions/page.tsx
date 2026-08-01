@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Wifi, WifiOff, Download, ArrowUpDown, Clock, Search } from 'lucide-react';
 import { toast } from 'sonner';
-import { supabase } from '@/lib/supabase';
+import { apiFetch } from '@/lib/api';
 import type { RadAcct } from '@/lib/types';
 import { PageShell } from '@/components/page-shell';
 import { StatusBadge, statusVariant } from '@/components/status-badge';
@@ -39,18 +39,14 @@ export default function SessionsPage() {
 
   async function load() {
     setLoading(true);
-    const { data, error } = await supabase
-      .from('radacct')
-      .select('*')
-      .order('acctstarttime', { ascending: false })
-      .limit(100);
-    if (error) {
+    try {
+      const data = await apiFetch<RadAcct[]>('/sessions');
+      setSessions(data ?? []);
+    } catch (error) {
       toast.error('Failed to load sessions');
+    } finally {
       setLoading(false);
-      return;
     }
-    setSessions(data as RadAcct[]);
-    setLoading(false);
   }
 
   useEffect(() => {

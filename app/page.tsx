@@ -16,7 +16,7 @@ import {
   Zap,
   Globe,
 } from 'lucide-react';
-import { supabase } from '@/lib/supabase';
+import { apiFetch } from '@/lib/api';
 import type { TenantPackage } from '@/lib/types';
 import { formatCurrency } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -29,15 +29,18 @@ export default function LandingPage() {
   const [billing, setBilling] = useState<'monthly' | 'yearly'>('monthly');
 
   useEffect(() => {
-    supabase
-      .from('tenant_packages')
-      .select('*')
-      .eq('is_active', true)
-      .order('sort_order')
-      .then(({ data }) => {
-        setPackages((data as TenantPackage[]) ?? []);
+    async function loadPackages() {
+      try {
+        const packagesData = await apiFetch<TenantPackage[]>('/packages/active');
+        setPackages(packagesData ?? []);
+      } catch (error) {
+        console.error('Failed to load packages', error);
+      } finally {
         setLoading(false);
-      });
+      }
+    }
+
+    loadPackages();
   }, []);
 
   return (

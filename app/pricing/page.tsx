@@ -3,12 +3,14 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Wifi, CheckCircle2, ArrowRight } from 'lucide-react';
-import { supabase } from '@/lib/supabase';
 import type { TenantPackage } from '@/lib/types';
 import { formatCurrency } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
+
+// Connect dynamically to your Droplet Node.js deployment instance
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'https://yourwisp.com';
 
 export default function PricingPage() {
   const [packages, setPackages] = useState<TenantPackage[]>([]);
@@ -16,15 +18,37 @@ export default function PricingPage() {
   const [billing, setBilling] = useState<'monthly' | 'yearly'>('monthly');
 
   useEffect(() => {
-    supabase
-      .from('tenant_packages')
-      .select('*')
-      .eq('is_active', true)
-      .order('sort_order')
-      .then(({ data }) => {
-        setPackages((data as TenantPackage[]) ?? []);
-        setLoading(false);
-      });
+    let active = true;
+
+    async function fetchPlatformPackages() {
+      try {
+        // Query the Node.js public packages path (ensure unauthenticated access is allowed on this endpoint)
+        const response = await fetch(`${API_BASE_URL}/packages/public-tiers`, {
+          method: 'GET',
+          headers: { 'Content-Type': 'application/json' }
+        });
+        const result = await response.json();
+
+        if (active && result.success && result.data) {
+          // Normalize features parsing if it returns as a raw stringified JSON array array structure
+          const normalizedData = result.data.map((pkg: any) => ({
+            ...pkg,
+            features: typeof pkg.features === 'string' ? JSON.parse(pkg.features) : (pkg.features || [])
+          }));
+          setPackages(normalizedData);
+        }
+      } catch (error) {
+        console.error('Failed to aggregate platform SaaS tiers maps:', error);
+      } finally {
+        if (active) setLoading(false);
+      }
+    }
+
+    fetchPlatformPackages();
+
+    return () => {
+      active = false;
+    };
   }, []);
 
   return (
@@ -125,13 +149,13 @@ function PricingCard({ pkg, billing, featured }: { pkg: TenantPackage; billing: 
       )}
       <CardContent className="flex flex-1 flex-col p-6">
         <h3 className="font-semibold text-foreground">{pkg.name}</h3>
-        <p className="mt-1 text-sm text-muted-foreground">{pkg.description}</p>
+        <p className="mt-1 text-sm text-muted-foreground">{pkg.description || 'Flexible infrastructure tier'}</p>
         <div className="mt-4">
           <span className="text-3xl font-bold text-foreground">{formatCurrency(price)}</span>
           <span className="text-sm text-muted-foreground">{period}</span>
         </div>
         <div className="mt-4 flex-1 space-y-2">
-          {pkg.features.map((f, i) => (
+          {pkg.features && pkg.features.map((f, i) => (
             <div key={i} className="flex items-start gap-2 text-sm">
               <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-success" />
               <span className="text-muted-foreground">{f}</span>
