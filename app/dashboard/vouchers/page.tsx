@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Ticket, Search, MoreHorizontal, Trash2, Copy, Sparkles, CheckCircle2 } from 'lucide-react';
 import { toast } from 'sonner';
-import { supabase } from '@/lib/supabase';
+import { apiFetch } from '@/lib/api';
 import type { RadCheck, RadGroupReply, UserStatus } from '@/lib/types';
 import { PageShell } from '@/components/page-shell';
 import { StatusBadge, statusVariant } from '@/components/status-badge';
@@ -34,14 +34,18 @@ export default function VouchersPage() {
 
   async function load() {
     setLoading(true);
-    const [vRes, pRes] = await Promise.all([
-      supabase.from('radcheck').select('*, plan:radgroupreply(id,plan_name,plan_price)').eq('is_voucher', true).order('created_at', { ascending: false }).limit(200),
-      supabase.from('radgroupreply').select('*').order('sort_order'),
-    ]);
-    if (vRes.error) { toast.error('Failed to load vouchers'); setLoading(false); return; }
-    setVouchers(vRes.data as RadCheck[]);
-    setPlans((pRes.data as RadGroupReply[]) ?? []);
-    setLoading(false);
+    try {
+      const [vouchersData, plansData] = await Promise.all([
+        apiFetch<RadCheck[]>('/vouchers?is_voucher=true'),
+        apiFetch<RadGroupReply[]>('/plans'),
+      ]);
+      setVouchers(vouchersData ?? []);
+      setPlans(plansData ?? []);
+    } catch (error) {
+      toast.error('Failed to load vouchers');
+    } finally {
+      setLoading(false);
+    }
   }
 
   useEffect(() => { load(); }, []);
@@ -69,13 +73,21 @@ export default function VouchersPage() {
       const code = generateVoucherCode();
       return { username: code, attribute: 'Cleartext-Password', op: ':=', value: generateVoucherPassword(), plan_id: genPlan, is_voucher: true, status: 'unused' as UserStatus };
     });
-    const { data, error } = await supabase.from('radcheck').insert(rows).select('username, value');
-    setGenerating(false);
-    if (error) { toast.error('Failed to generate vouchers'); return; }
-    const generated = ((data ?? []) as { username: string; value: string }[]).map((r) => ({ code: r.username, pass: r.value }));
-    setRecentlyGenerated(generated);
-    toast.success(`${count} voucher${count > 1 ? 's' : ''} generated`);
-    load();
+    setGenerating(true);
+    try {
+      const data = await apiFetch<{ username: string; value: string }[]>('/vouchers', {
+        method: 'POST',
+        body: rows,
+      });
+      const generated = (data ?? []).map((r) => ({ code: r.username, pass: r.value }));
+      setRecentlyGenerated(generated);
+      toast.success(`${count} voucher${count > 1 ? 's' : ''} generated`);
+      load();
+    } catch (error) {
+      toast.error('Failed to generate vouchers');
+    } finally {
+      setGenerating(false);
+    }
   }
 
   async function copyCode(code: string, pass: string) {
@@ -88,9 +100,14 @@ export default function VouchersPage() {
 
   async function confirmDelete() {
     if (!deleteId) return;
-    const { error } = await supabase.from('radcheck').delete().eq('id', deleteId);
-    if (error) { toast.error('Failed to delete voucher'); return; }
-    toast.success('Voucher deleted'); setDeleteId(null); load();
+    try {
+      await apiFetch(`/vouchers/${deleteId}`, { method: 'DELETE' });
+      toast.success('Voucher deleted');
+      setDeleteId(null);
+      load();
+    } catch (error) {
+      toast.error('Failed to delete voucher');
+    }
   }
 
   return (

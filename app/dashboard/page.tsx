@@ -27,7 +27,7 @@ import {
   TrendingUp,
   ArrowRight,
 } from 'lucide-react';
-import { supabase } from '@/lib/supabase';
+import { apiFetch } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
 import type { Nas, RadAcct, RadCheck, RadGroupReply, BillingTransaction } from '@/lib/types';
 import { PageShell } from '@/components/page-shell';
@@ -69,29 +69,33 @@ export default function DashboardPage() {
   useEffect(() => {
     let cancelled = false;
     async function load() {
-      const [nas, users, plans, sessions, transactions] = await Promise.all([
-        supabase.from('nas').select('*').order('created_at'),
-        supabase.from('radcheck').select('*, plan:radgroupreply(id,plan_name)').order('created_at', { ascending: false }),
-        supabase.from('radgroupreply').select('*').order('sort_order'),
-        supabase.from('radacct').select('*').order('acctstarttime', { ascending: false }).limit(50),
-        supabase.from('billing_transactions').select('*, plan:radgroupreply(id,plan_name)').order('created_at', { ascending: false }).limit(50),
-      ]);
+      try {
+        const [nas, users, plans, sessions, transactions] = await Promise.all([
+          apiFetch<Nas[]>('/nas'),
+          apiFetch<RadCheck[]>('/users'),
+          apiFetch<RadGroupReply[]>('/plans'),
+          apiFetch<RadAcct[]>('/sessions'),
+          apiFetch<BillingTransaction[]>('/transactions'),
+        ]);
 
-      if (cancelled) return;
-      const errs = [nas, users, plans, sessions, transactions].map((r) => r.error).filter(Boolean);
-      if (errs.length) {
-        setError('Failed to load dashboard data');
-        setLoading(false);
-        return;
+        if (cancelled) return;
+
+        setData({
+          nas: nas ?? [],
+          users: users ?? [],
+          plans: plans ?? [],
+          sessions: sessions ?? [],
+          transactions: transactions ?? [],
+        });
+      } catch (e) {
+        if (!cancelled) {
+          setError('Failed to load dashboard data');
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
       }
-      setData({
-        nas: nas.data as Nas[],
-        users: users.data as RadCheck[],
-        plans: plans.data as RadGroupReply[],
-        sessions: sessions.data as RadAcct[],
-        transactions: transactions.data as BillingTransaction[],
-      });
-      setLoading(false);
     }
     load();
     return () => { cancelled = true; };

@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Plus, CreditCard, Search, MoreHorizontal, Pencil, Trash2, Zap, Clock, Database, Users, CheckCircle2 } from 'lucide-react';
 import { toast } from 'sonner';
-import { supabase } from '@/lib/supabase';
+import { apiFetch } from '@/lib/api';
 import type { RadGroupReply } from '@/lib/types';
 import { PageShell } from '@/components/page-shell';
 import { StatusBadge } from '@/components/status-badge';
@@ -33,16 +33,18 @@ export default function PlansPage() {
 
   async function load() {
     setLoading(true);
-    const [pRes, uRes] = await Promise.all([
-      supabase.from('radgroupreply').select('*').order('sort_order'),
-      supabase.from('radcheck').select('plan_id'),
-    ]);
-    if (pRes.error) { toast.error('Failed to load plans'); setLoading(false); return; }
-    const counts: Record<string, number> = {};
-    (uRes.data ?? []).forEach((u: { plan_id: string | null }) => { if (u.plan_id) counts[u.plan_id] = (counts[u.plan_id] ?? 0) + 1; });
-    setPlans(pRes.data as RadGroupReply[]);
-    setUserCounts(counts);
-    setLoading(false);
+    try {
+      const [plansData, userPlanCounts] = await Promise.all([
+        apiFetch<RadGroupReply[]>('/plans'),
+        apiFetch<Record<string, number>>('/counts/plans'),
+      ]);
+      setPlans(plansData ?? []);
+      setUserCounts(userPlanCounts ?? {});
+    } catch (error) {
+      toast.error('Failed to load plans');
+    } finally {
+      setLoading(false);
+    }
   }
 
   useEffect(() => { load(); }, []);
@@ -74,20 +76,38 @@ export default function PlansPage() {
       is_active: form.is_active,
       sort_order: Number(form.sort_order) || 0,
     };
-    let res;
-    if (editing) res = await supabase.from('radgroupreply').update(payload).eq('id', editing.id);
-    else res = await supabase.from('radgroupreply').insert(payload);
-    setSaving(false);
-    if (res.error) { toast.error(editing ? 'Failed to update plan' : 'Failed to create plan'); return; }
-    toast.success(editing ? 'Plan updated' : 'Plan created');
-    setDialogOpen(false); load();
+    try {
+      if (editing) {
+        await apiFetch(`/plans/${editing.id}`, {
+          method: 'PUT',
+          body: payload,
+        });
+      } else {
+        await apiFetch('/plans', {
+          method: 'POST',
+          body: payload,
+        });
+      }
+      toast.success(editing ? 'Plan updated' : 'Plan created');
+      setDialogOpen(false);
+      load();
+    } catch (error) {
+      toast.error(editing ? 'Failed to update plan' : 'Failed to create plan');
+    } finally {
+      setSaving(false);
+    }
   }
 
   async function confirmDelete() {
     if (!deleteId) return;
-    const { error } = await supabase.from('radgroupreply').delete().eq('id', deleteId);
-    if (error) { toast.error('Failed to delete plan'); return; }
-    toast.success('Plan deleted'); setDeleteId(null); load();
+    try {
+      await apiFetch(`/plans/${deleteId}`, { method: 'DELETE' });
+      toast.success('Plan deleted');
+      setDeleteId(null);
+      load();
+    } catch (error) {
+      toast.error('Failed to delete plan');
+    }
   }
 
   return (

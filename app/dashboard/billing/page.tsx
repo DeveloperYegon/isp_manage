@@ -1,3 +1,4 @@
+// app/dashboard/billing/page.tsx
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
@@ -6,7 +7,7 @@ import {
   Smartphone, CreditCard, Banknote, Building2, Plus, Clock, CheckCircle2,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { supabase } from '@/lib/supabase';
+import { apiFetch } from '@/lib/api';
 import type {
   BillingTransaction, PaymentMethod, RadCheck, RadGroupReply,
   TransactionStatus, TransactionType,
@@ -45,16 +46,20 @@ export default function BillingPage() {
 
   async function load() {
     setLoading(true);
-    const [tRes, uRes, pRes] = await Promise.all([
-      supabase.from('billing_transactions').select('*, plan:radgroupreply(id,plan_name)').order('created_at', { ascending: false }).limit(100),
-      supabase.from('radcheck').select('id, username, full_name').eq('is_voucher', false).order('username'),
-      supabase.from('radgroupreply').select('id, plan_name, plan_price').order('sort_order'),
-    ]);
-    if (tRes.error) { toast.error('Failed to load transactions'); setLoading(false); return; }
-    setTransactions(tRes.data as BillingTransaction[]);
-    setUsers((uRes.data as RadCheck[]) ?? []);
-    setPlans((pRes.data as RadGroupReply[]) ?? []);
-    setLoading(false);
+    try {
+      const [transactionsData, usersData, plansData] = await Promise.all([
+        apiFetch<BillingTransaction[]>('/transactions'),
+        apiFetch<RadCheck[]>('/users?is_voucher=false'),
+        apiFetch<RadGroupReply[]>('/plans'),
+      ]);
+      setTransactions(transactionsData ?? []);
+      setUsers(usersData ?? []);
+      setPlans(plansData ?? []);
+    } catch (error) {
+      toast.error('Failed to load transactions');
+    } finally {
+      setLoading(false);
+    }
   }
 
   useEffect(() => { load(); }, []);
@@ -84,49 +89,75 @@ export default function BillingPage() {
   async function save() {
     setSaving(true);
     const payload = { customer_username: form.customer_username === '__none__' ? null : form.customer_username, plan_id: form.plan_id === '__none__' ? null : form.plan_id, amount: Number(form.amount) || 0, type: form.type, status: form.status, payment_method: form.payment_method, reference: form.reference.trim() || null };
-    const { error } = await supabase.from('billing_transactions').insert(payload);
-    setSaving(false);
-    if (error) { toast.error('Failed to record transaction'); return; }
-    toast.success('Transaction recorded'); setCreateOpen(false); load();
+    try {
+      await apiFetch('/transactions', {
+        method: 'POST',
+        body: payload,
+      });
+      toast.success('Transaction recorded');
+      setCreateOpen(false);
+      load();
+    } catch (error) {
+      toast.error('Failed to record transaction');
+    } finally {
+      setSaving(false);
+    }
   }
 
   async function stkPush() {
     if (!stkForm.phone.trim() || stkForm.amount <= 0) { toast.error('Enter phone number and amount'); return; }
     setStkLoading(true);
     const ref = `STK-${Date.now()}`;
-    const { data, error } = await supabase.from('billing_transactions').insert({
-      customer_username: null,
-      plan_id: stkForm.plan_id === '__none__' ? null : stkForm.plan_id,
-      amount: Number(stkForm.amount),
-      type: 'plan_purchase',
-      status: 'pending',
-      payment_method: 'mpesa',
-      mpesa_phone: stkForm.phone.trim(),
-      reference: ref,
-      callback_received: false,
-    }).select('id').single();
+    let transactionId: string | null = null;
+    try {
+      const data = await apiFetch<{ id: string }>('/transactions', {
+        method: 'POST',
+        body: {
+          customer_username: null,
+          plan_id: stkForm.plan_id === '__none__' ? null : stkForm.plan_id,
+          amount: Number(stkForm.amount),
+          type: 'plan_purchase',
+          status: 'pending',
+          payment_method: 'mpesa',
+          mpesa_phone: stkForm.phone.trim(),
+          reference: ref,
+          callback_received: false,
+        },
+      });
+      transactionId = data?.id ?? null;
+    } catch (error) {
+      setStkLoading(false);
+      toast.error('Could not initiate M-Pesa payment');
+      return;
+    }
 
     setStkLoading(false);
-    if (error || !data) { toast.error('Could not initiate M-Pesa payment'); return; }
+    if (!transactionId) { toast.error('Could not initiate M-Pesa payment'); return; }
 
-    // Call edge function for STK push
-    const apiUrl = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/mpesa-stk-push`;
+    // Call application backend to initiate STK push
     try {
-      const res = await fetch(apiUrl, {
+      const result = await apiFetch<{ checkoutRequestId: string; merchantRequestId: string }>('/mpesa/stk-push', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY}` },
-        body: JSON.stringify({ transactionId: data.id, phone: stkForm.phone.trim(), amount: Number(stkForm.amount), reference: ref }),
+        body: { transactionId, phone: stkForm.phone.trim(), amount: Number(stkForm.amount), reference: ref },
       });
-      if (!res.ok) { toast.error('M-Pesa STK push failed to initiate'); return; }
-      const result = await res.json();
-      if (result.checkoutRequestId) {
-        await supabase.from('billing_transactions').update({ mpesa_checkout_request_id: result.checkoutRequestId, mpesa_merchant_request_id: result.merchantRequestId }).eq('id', data.id);
+
+      if (result?.checkoutRequestId) {
+        await apiFetch(`/transactions/${transactionId}`, {
+          method: 'PUT',
+          body: {
+            mpesa_checkout_request_id: result.checkoutRequestId,
+            mpesa_merchant_request_id: result.merchantRequestId,
+          },
+        });
       }
+
       toast.success('M-Pesa STK push sent! Check the customer phone to complete payment.', { description: `Ref: ${ref}` });
-      setStkOpen(false); load();
+      setStkOpen(false);
+      load();
     } catch {
       toast.error('M-Pesa request failed. The payment is pending and will be processed.');
-      setStkOpen(false); load();
+      setStkOpen(false);
+      load();
     }
   }
 

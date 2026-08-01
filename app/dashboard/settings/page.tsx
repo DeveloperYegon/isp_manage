@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { Building2, MapPin, Mail, Phone, CreditCard, Calendar, Users, Router, CheckCircle2, AlertCircle } from 'lucide-react';
 import { toast } from 'sonner';
-import { supabase } from '@/lib/supabase';
+import { apiFetch } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
 import type { Tenant, TenantPackage } from '@/lib/types';
 import { PageShell } from '@/components/page-shell';
@@ -25,27 +25,45 @@ export default function SettingsPage() {
   useEffect(() => {
     if (!tenant) return;
     setForm({ company_name: tenant.company_name, contact_email: tenant.contact_email, contact_phone: tenant.contact_phone ?? '', country: tenant.country, city: tenant.city ?? '' });
-    supabase.from('tenant_packages').select('*').eq('is_active', true).order('sort_order').then(({ data }) => setPackages((data as TenantPackage[]) ?? []));
-    Promise.all([
-      supabase.from('nas').select('id', { count: 'exact', head: true }),
-      supabase.from('radcheck').select('id', { count: 'exact', head: true }).eq('is_voucher', false),
-      supabase.from('radgroupreply').select('id', { count: 'exact', head: true }),
-    ]).then(([n, u, p]) => setCounts({ nas: n.count ?? 0, users: u.count ?? 0, plans: p.count ?? 0 }));
+    async function loadSettings() {
+      try {
+        const [packagesData, nasCount, usersCount, plansCount] = await Promise.all([
+          apiFetch<TenantPackage[]>('/packages/active'),
+          apiFetch<number>('/counts/nas'),
+          apiFetch<number>('/counts/users'),
+          apiFetch<number>('/counts/plans'),
+        ]);
+        setPackages(packagesData ?? []);
+        setCounts({ nas: nasCount ?? 0, users: usersCount ?? 0, plans: plansCount ?? 0 });
+      } catch (error) {
+        toast.error('Failed to load settings data');
+      }
+    }
+
+    loadSettings();
   }, [tenant]);
 
   async function saveProfile() {
     if (!tenant) return;
     setSaving(true);
-    const { error } = await supabase.from('tenants').update({
-      company_name: form.company_name.trim(),
-      contact_email: form.contact_email.trim(),
-      contact_phone: form.contact_phone.trim() || null,
-      country: form.country,
-      city: form.city.trim() || null,
-    }).eq('id', tenant.id);
-    setSaving(false);
-    if (error) { toast.error('Failed to save settings'); return; }
-    toast.success('Settings saved'); setEditing(false);
+    try {
+      await apiFetch(`/tenants/${tenant.id}`, {
+        method: 'PUT',
+        body: {
+          company_name: form.company_name.trim(),
+          contact_email: form.contact_email.trim(),
+          contact_phone: form.contact_phone.trim() || null,
+          country: form.country,
+          city: form.city.trim() || null,
+        },
+      });
+      toast.success('Settings saved');
+      setEditing(false);
+    } catch (error) {
+      toast.error('Failed to save settings');
+    } finally {
+      setSaving(false);
+    }
   }
 
   if (!tenant) {

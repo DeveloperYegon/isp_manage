@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Plus, Router, Search, MoreHorizontal, Pencil, Trash2, Wifi, MapPin } from 'lucide-react';
 import { toast } from 'sonner';
-import { supabase } from '@/lib/supabase';
+import { apiFetch } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
 import type { Nas, NasStatus, RadAcct } from '@/lib/types';
 import { PageShell } from '@/components/page-shell';
@@ -36,15 +36,21 @@ export default function NasPage() {
 
   async function load() {
     setLoading(true);
-    const { data: nasData, error } = await supabase.from('nas').select('*').order('shortname');
-    if (error) { toast.error('Failed to load NAS devices'); setLoading(false); return; }
-    const { data: sess } = await supabase.from('radacct').select('nasipaddress, status').eq('status', 'connected');
-    const loadMap = new Map<string, number>();
-    (sess ?? []).forEach((s: Pick<RadAcct, 'nasipaddress' | 'status'>) => {
-      if (s.nasipaddress) loadMap.set(s.nasipaddress, (loadMap.get(s.nasipaddress) ?? 0) + 1);
-    });
-    setDevices((nasData as Nas[]).map((n) => ({ ...n, activeSessions: loadMap.get(n.nasname) ?? 0 })));
-    setLoading(false);
+    try {
+      const [nasData, sessionsData] = await Promise.all([
+        apiFetch<Nas[]>('/nas'),
+        apiFetch<Pick<RadAcct, 'nasipaddress' | 'status'>[]>('/sessions?status=connected'),
+      ]);
+      const loadMap = new Map<string, number>();
+      (sessionsData ?? []).forEach((s) => {
+        if (s.nasipaddress) loadMap.set(s.nasipaddress, (loadMap.get(s.nasipaddress) ?? 0) + 1);
+      });
+      setDevices((nasData ?? []).map((n) => ({ ...n, activeSessions: loadMap.get(n.nasname) ?? 0 })));
+    } catch (error) {
+      toast.error('Failed to load NAS devices');
+    } finally {
+      setLoading(false);
+    }
   }
 
   useEffect(() => { load(); }, []);
@@ -66,20 +72,38 @@ export default function NasPage() {
     if (!form.nasname.trim() || !form.shortname.trim() || !form.secret.trim()) { toast.error('NAS name, shortname, and secret are required'); return; }
     setSaving(true);
     const payload = { nasname: form.nasname.trim(), shortname: form.shortname.trim(), type: form.type, secret: form.secret.trim(), ports: Number(form.ports) || 0, description: form.description.trim() || null, status: form.status, location: form.location.trim() || null, max_connections: Number(form.max_connections) || 50 };
-    let res;
-    if (editing) res = await supabase.from('nas').update(payload).eq('id', editing.id);
-    else res = await supabase.from('nas').insert(payload);
-    setSaving(false);
-    if (res.error) { toast.error(editing ? 'Failed to update NAS' : 'Failed to create NAS'); return; }
-    toast.success(editing ? 'NAS updated' : 'NAS created');
-    setDialogOpen(false); load();
+    try {
+      if (editing) {
+        await apiFetch(`/nas/${editing.id}`, {
+          method: 'PUT',
+          body: payload,
+        });
+      } else {
+        await apiFetch('/nas', {
+          method: 'POST',
+          body: payload,
+        });
+      }
+      toast.success(editing ? 'NAS updated' : 'NAS created');
+      setDialogOpen(false);
+      load();
+    } catch (error) {
+      toast.error(editing ? 'Failed to update NAS' : 'Failed to create NAS');
+    } finally {
+      setSaving(false);
+    }
   }
 
   async function confirmDelete() {
     if (!deleteId) return;
-    const { error } = await supabase.from('nas').delete().eq('id', deleteId);
-    if (error) { toast.error('Failed to delete NAS'); return; }
-    toast.success('NAS deleted'); setDeleteId(null); load();
+    try {
+      await apiFetch(`/nas/${deleteId}`, { method: 'DELETE' });
+      toast.success('NAS deleted');
+      setDeleteId(null);
+      load();
+    } catch (error) {
+      toast.error('Failed to delete NAS');
+    }
   }
 
   return (

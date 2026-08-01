@@ -19,7 +19,6 @@ import {
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { useAuth } from '@/lib/auth-context';
 import { initials } from '@/lib/utils';
-import { supabase } from '@/lib/supabase';
 
 export function TopBar({ title, subtitle }: { title: string; subtitle?: string }) {
   const [open, setOpen] = useState(false);
@@ -27,7 +26,8 @@ export function TopBar({ title, subtitle }: { title: string; subtitle?: string }
   const { user, profile, tenant } = useAuth();
 
   async function handleLogout() {
-    await supabase.auth.signOut();
+    localStorage.removeItem('tenant_token');
+    localStorage.removeItem('current_tenant_id');
     toast.success('Signed out');
     router.push('/login');
   }
