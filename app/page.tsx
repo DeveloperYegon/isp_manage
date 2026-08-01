@@ -22,6 +22,8 @@ import { formatCurrency } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Footer } from '@/components/Footer';
+import { Navbar } from '@/components/Navbar';
 
 export default function LandingPage() {
   const [packages, setPackages] = useState<TenantPackage[]>([]);
@@ -45,31 +47,7 @@ export default function LandingPage() {
 
   return (
     <div className="min-h-screen bg-background">
-      {/* Nav */}
-      <nav className="sticky top-0 z-50 border-b bg-background/80 backdrop-blur-md">
-        <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4">
-          <div className="flex items-center gap-2.5">
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-              <Wifi className="h-5 w-5" />
-            </div>
-            <div className="flex flex-col leading-tight">
-              <span className="text-sm font-bold text-foreground">WispNet</span>
-              <span className="text-[11px] text-muted-foreground">Hotspot Management Platform</span>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <Link href="/login">
-              <Button variant="ghost" size="sm">Sign In</Button>
-            </Link>
-            <Link href="/signup">
-              <Button size="sm" className="gap-1.5">
-                Get Started <ArrowRight className="h-4 w-4" />
-              </Button>
-            </Link>
-          </div>
-        </div>
-      </nav>
-
+     <Navbar />
       {/* Hero */}
       <section className="relative overflow-hidden">
         <div className="absolute inset-0 -z-10">
@@ -77,22 +55,24 @@ export default function LandingPage() {
           <div className="absolute right-1/4 top-40 h-72 w-72 rounded-full bg-info/10 blur-3xl" />
         </div>
         <div className="mx-auto max-w-6xl px-4 py-20 text-center md:py-28">
-          <div className="mb-6 inline-flex items-center gap-2 rounded-full border bg-card px-4 py-1.5 text-sm text-muted-foreground">
-            <span className="flex h-2 w-2 rounded-full bg-success animate-pulse" />
-            FreeRADIUS-compatible & M-Pesa Daraja integrated
-          </div>
+         
           <h1 className="mx-auto max-w-3xl text-4xl font-bold tracking-tight text-foreground md:text-5xl">
-            Run your ISP hotspot business{' '}
+            Run your ISP business{' '}
             <span className="bg-gradient-to-r from-primary to-info bg-clip-text text-transparent">
               in the cloud
             </span>
           </h1>
           <p className="mx-auto mt-6 max-w-2xl text-lg text-muted-foreground">
-            Multitenant hotspot management powered by FreeRADIUS. Manage NAS devices,
+            Remote ISP management platform powered by FreeRADIUS. Manage NAS devices,
             RADIUS users, vouchers, and billing — with built-in M-Pesa Daraja STK push
             payments. Sign up, subscribe, and start operating in minutes.
           </p>
-          <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
+
+           <div className="my-3 inline-flex items-center gap-2 rounded-full border bg-card px-4 py-1.5 text-sm text-muted-foreground">
+            <span className="flex h-2 w-2 rounded-full bg-success animate-pulse" />
+            FreeRADIUS-compatible & M-Pesa Daraja integrated
+          </div>
+          <div className="mt-3 flex flex-col items-center justify-center gap-3 sm:flex-row">
             <Link href="/signup">
               <Button size="lg" className="gap-1.5">
                 Start Free Trial <ArrowRight className="h-4 w-4" />
@@ -225,16 +205,8 @@ export default function LandingPage() {
           </div>
         </div>
       </section>
-
-      {/* Footer */}
-      <footer className="border-t bg-muted/30">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-8">
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Wifi className="h-4 w-4" /> WispNet — Hotspot Management Platform
-          </div>
-          <p className="text-sm text-muted-foreground">FreeRADIUS · M-Pesa Daraja · Multitenant SaaS</p>
-        </div>
-      </footer>
+    <Footer/>
+     
     </div>
   );
 }
