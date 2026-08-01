@@ -1,6 +1,25 @@
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'https://yourwisp.com';
 
-type ApiOptions = RequestInit & { noJson?: boolean };
+type ApiBody = BodyInit | Record<string, unknown> | Array<unknown> | null | undefined;
+type ApiOptions = Omit<RequestInit, 'body'> & { body?: ApiBody; noJson?: boolean };
+
+function serializeBody(body: ApiBody) {
+  if (body == null) return undefined;
+
+  if (
+    typeof body === 'string' ||
+    body instanceof Blob ||
+    body instanceof FormData ||
+    body instanceof URLSearchParams ||
+    body instanceof ArrayBuffer ||
+    ArrayBuffer.isView(body) ||
+    (typeof ReadableStream !== 'undefined' && body instanceof ReadableStream)
+  ) {
+    return body;
+  }
+
+  return JSON.stringify(body);
+}
 
 export async function apiFetch<T = any>(path: string, options: ApiOptions = {}) {
   const headers: Record<string, string> = {
@@ -19,10 +38,7 @@ export async function apiFetch<T = any>(path: string, options: ApiOptions = {}) 
   const response = await fetch(`${API_BASE_URL}${path}`, {
     ...options,
     headers,
-    body:
-      options.body && typeof options.body !== 'string'
-        ? JSON.stringify(options.body)
-        : options.body,
+    body: serializeBody(options.body),
   });
 
   if (options.noJson) {
