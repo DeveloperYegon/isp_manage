@@ -29,7 +29,7 @@ const COUNTRIES = [
 ];
 
 // Read environment target domain path, falling back gracefully to droplet proxy endpoint
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'https://yourwisp.com';
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'https://aapi.datanyagency.com';
 
 function SignupForm() {
   const router = useRouter();
@@ -61,7 +61,7 @@ function SignupForm() {
 
     try {
       // Direct unified submission payload matching the Node.js MVC register controller endpoints
-      const response = await fetch(`${API_BASE_URL}:3000/auth/register`, {
+      const response = await fetch(`${API_BASE_URL}:2703/auth/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

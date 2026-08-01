@@ -11,7 +11,7 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 
 // Read configuration route domains directly from target environment strings
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'https://yourwisp.com';
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'https://aapi.datanyagency.com';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -30,7 +30,7 @@ export default function LoginPage() {
 
     try {
       // Fire authorization payload directly down to your droplet node server pipeline
-      const response = await fetch(`${API_BASE_URL}/auth/login`, {
+      const response = await fetch(`${API_BASE_URL}:2703/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
